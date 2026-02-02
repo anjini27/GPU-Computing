@@ -1,11 +1,29 @@
 #include <cuda_runtime.h>
 
-__global__ void reduction(const float* input, float* output, int N){
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if(idx < N){
-        atomicAdd(output, input[idx]);
+__global__ void reduction(const float* input, float* output, int N) {
+
+    __shared__ double sdata[256];   // double precision
+
+    int tid = threadIdx.x;
+    int idx = blockIdx.x * blockDim.x + tid;
+
+    if (idx < N)
+        sdata[tid] = (double)input[idx];
+    else
+        sdata[tid] = 0.0;
+
+    __syncthreads();
+
+    for (int stride = blockDim.x / 2; stride > 0; stride >>= 1) {
+        if (tid < stride)
+            sdata[tid] += sdata[tid + stride];
+        __syncthreads();
     }
+
+    if (tid == 0)
+        atomicAdd(output, (float)sdata[0]);
 }
+
 
 extern "C" void solve(const float* input, float* output, int N) {
 
